@@ -36,6 +36,9 @@ pub fn run(cx: &mut Ctx) -> Result<()> {
                 .into(),
         ));
     };
+    // Before the (possibly long) preparation: a replugged iPhone is noticed
+    // now, not when xtool fails to find it.
+    super::phone::connect_if_needed(cx)?;
     if let Some(prepare) = project.prepare_cmd() {
         cx.ui.note(&format!(
             "Running {} in {}.",

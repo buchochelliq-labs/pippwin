@@ -183,8 +183,15 @@ WSL does not see USB devices by itself. usbipd-win, on Windows, passes the
 iPhone through: it is **bound** once (an administrator action, so Windows
 shows a User Account Control prompt for `usbipd bind --busid <id>`) and
 **attached** each time you plug it in (`usbipd attach --wsl --busid <id>`).
-Inside WSL, `usbmuxd` talks to the phone; pippwin starts it with sudo after
-showing the command.
+Inside WSL, `usbmuxd` talks to the phone. Where WSL runs systemd, its udev
+rule starts it when the phone is attached; otherwise pippwin starts it with
+sudo after showing the command.
+
+pippwin then offers to **reconnect automatically**
+(`usbipd attach --wsl --busid <id> --auto-attach`, in a minimized Windows
+window), so a replugged iPhone is attached again by itself until that window
+is closed or Windows restarts. Without it, `pippwin run` notices a replugged
+iPhone and offers to connect it.
 
 Unlock the iPhone. If it asks **Trust This Computer?**, tap Trust and enter
 its passcode (xtool shows "Please tap 'trust' on your device..." while it

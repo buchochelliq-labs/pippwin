@@ -14,7 +14,9 @@ of relying on usbipd.
 
 usbipd-win **binds** a device once, but it must be **attached** to WSL again
 every time it is plugged in, after the PC sleeps, or after WSL restarts.
-Run
+`pippwin run` notices this and offers to connect it. With automatic
+reconnect on (`pippwin phone` offers it; `pippwin doctor` shows whether it
+is running), replugging needs nothing at all. To connect it by hand, run
 
 ```sh
 pippwin phone

@@ -271,6 +271,9 @@ pub mod fake {
         /// `(display, stdout)` answers for captures, matched by prefix of
         /// the displayed command.
         pub answers: Vec<(String, Captured)>,
+        /// Answers used once each, before `answers`: a device that appears
+        /// only after it is connected, say.
+        pub once: Vec<(String, Captured)>,
         pub programs: Vec<String>,
         pub ran: Vec<Cmd>,
         pub captured: Vec<Cmd>,
@@ -284,12 +287,25 @@ pub mod fake {
             self.answers.push((prefix.into(), Captured::ok(stdout)));
             self
         }
+
+        /// An answer for the next matching capture only.
+        pub fn answer_once(mut self, prefix: &str, stdout: &str) -> FakeRunner {
+            self.once.push((prefix.into(), Captured::ok(stdout)));
+            self
+        }
     }
 
     impl Runner for FakeRunner {
         fn capture(&mut self, cmd: &Cmd) -> Result<Captured> {
             self.captured.push(cmd.clone());
             let shown = cmd.display();
+            if let Some(at) = self
+                .once
+                .iter()
+                .position(|(prefix, _)| shown.starts_with(prefix.as_str()))
+            {
+                return Ok(self.once.remove(at).1);
+            }
             Ok(self
                 .answers
                 .iter()

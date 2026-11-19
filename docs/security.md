@@ -84,6 +84,14 @@ shell, and `setup-windows.ps1` does no `Invoke-Expression` of remote
 content and changes no execution policy (`-ExecutionPolicy Bypass` applies
 to its one process). Download and read the scripts before running them.
 
+On Windows, pippwin runs only usbipd-win, and only when you say yes. It
+shares the iPhone once through a User Account Control prompt (`usbipd bind`)
+and attaches it without administrator rights. If you turn on
+**reconnect automatically**, it starts `usbipd attach --wsl --busid <id>
+--auto-attach` in a minimized window you can see and close. It installs no
+service, scheduled task or startup entry, so nothing keeps running after
+that window closes or Windows restarts.
+
 Every pin is in [`src/versions.rs`](https://github.com/buchochelliq-labs/pippwin/blob/main/src/versions.rs);
 [Maintaining pippwin](maintaining.md#updating-the-pins) says how each one
 is obtained.
