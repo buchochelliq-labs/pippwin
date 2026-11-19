@@ -661,3 +661,30 @@ a1b2c3d4-0000-0000-0000-000000000000  USB Mass Storage Device\n";
         assert!(apt_packages_in_script("echo hi; rm -rf /").is_empty());
     }
 }
+
+/// The branch in `git ls-remote --symref origin HEAD` output
+/// (`ref: refs/heads/main\tHEAD`).
+pub fn symref_head(output: &str) -> Option<String> {
+    output.lines().find_map(|line| {
+        let rest = line.strip_prefix("ref: refs/heads/")?;
+        let (name, target) = rest.split_once('\t')?;
+        (target.trim() == "HEAD" && !name.is_empty()).then(|| name.to_string())
+    })
+}
+
+#[cfg(test)]
+mod symref_tests {
+    use super::symref_head;
+
+    #[test]
+    fn reads_the_default_branch() {
+        let out = "ref: refs/heads/main\tHEAD\n3d4cfd7f5379dbfdcfe7fedd583b9c78929ae9b1\tHEAD\n";
+        assert_eq!(symref_head(out).as_deref(), Some("main"));
+        assert_eq!(
+            symref_head("ref: refs/heads/release/2\tHEAD\n").as_deref(),
+            Some("release/2")
+        );
+        assert_eq!(symref_head("3d4cfd7\tHEAD\n"), None);
+        assert_eq!(symref_head(""), None);
+    }
+}

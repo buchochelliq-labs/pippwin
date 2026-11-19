@@ -44,7 +44,13 @@ already have is used. pippwin asks:
   `main`), or another one. `--branch` answers this.
 
 An existing clone is reused only when its `origin` is the same repository
-and it has no uncommitted changes. Then `pippwin.toml` is read and checked
+and it has no uncommitted changes. pippwin then fetches the chosen branch,
+switches to it and brings it up to date with a fast-forward only: a local
+branch with commits of its own stops setup with a message, so nothing of
+yours is rewritten. When the clone is on a branch without `pippwin.toml`
+(an older clone, say) and no branch was chosen, pippwin first moves it to
+the repository's default branch and reads the branch from there. Then
+`pippwin.toml` is read and checked
 (see [the reference](pippwin-toml.md)), and pippwin shows what it found:
 the repository, the app folder, the bundle ID from `xtool.yml`, what runs
 before `xtool dev`, and which tools the project needs.

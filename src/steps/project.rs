@@ -321,9 +321,14 @@ fn switch_to_project_branch(cx: &mut Ctx, repo: &Path) -> Result<()> {
     Ok(())
 }
 
+/// Fetch `branch` from origin, switch to it and bring it up to date. Only
+/// a fast-forward: a local branch with commits of its own stops here, so
+/// nothing of the user's is rewritten.
 fn switch(cx: &mut Ctx, repo: &Path, branch: &str) -> Result<()> {
-    cx.ui
-        .note(&format!("Switching to {}.", rich::markup::escape(branch)));
+    cx.ui.note(&format!(
+        "Switching to {} and bringing it up to date.",
+        rich::markup::escape(branch)
+    ));
     cx.run.interactive(
         &git(repo)
             .args(["fetch", "origin"])
@@ -331,7 +336,58 @@ fn switch(cx: &mut Ctx, repo: &Path, branch: &str) -> Result<()> {
             .input(Input::Null),
     )?;
     cx.run
-        .interactive(&git(repo).args(["switch", branch]).input(Input::Null))
+        .interactive(&git(repo).args(["switch", branch]).input(Input::Null))?;
+    cx.run
+        .interactive(
+            &git(repo)
+                .args(["merge", "--ff-only"])
+                .arg(format!("origin/{branch}"))
+                .input(Input::Null),
+        )
+        .map_err(|_| {
+            Error::NotReady(format!(
+                "{branch} in {} has commits that are not on origin, so it cannot be brought up to date; \
+merge or remove them, then run setup again",
+                repo.display()
+            ))
+        })?;
+    // `merge --ff-only` succeeds when the branch is already ahead of
+    // origin, so commits of its own are looked for explicitly.
+    let ahead = cx.run.capture(
+        &git(repo)
+            .args(["rev-list", "--count"])
+            .arg(format!("origin/{branch}..HEAD")),
+    )?;
+    if !ahead.success || ahead.stdout.trim() != "0" {
+        return Err(Error::NotReady(format!(
+            "{branch} in {} has commits that are not on origin; push or remove them, then run setup again",
+            repo.display()
+        )));
+    }
+    Ok(())
+}
+
+/// The branch origin's HEAD points at: the repository's default branch.
+fn remote_default_branch(cx: &mut Ctx, repo: &Path) -> Result<String> {
+    let out = cx
+        .run
+        .capture(&git(repo).args(["ls-remote", "--symref", "origin", "HEAD"]))?;
+    let found = out
+        .success
+        .then(|| crate::parse::symref_head(&out.stdout))
+        .flatten();
+    let name = found.ok_or_else(|| {
+        Error::NotReady(format!(
+            "could not ask origin of {} for its default branch; check the network and run setup again",
+            repo.display()
+        ))
+    })?;
+    validate::branch(&name).map_err(|_| {
+        Error::NotReady(format!(
+            "origin of {} names an unusable default branch",
+            repo.display()
+        ))
+    })
 }
 
 fn require_clean(cx: &mut Ctx, repo: &Path) -> Result<()> {
@@ -362,13 +418,26 @@ fn reuse_clone(cx: &mut Ctx, repo: &Path, url: &str, branch: &Branch) -> Result<
         )));
     }
     require_clean(cx, repo)?;
+    // A clone made earlier can be on any branch and behind origin, so it
+    // is always fetched and brought up to date, never used as it stands.
     match branch {
-        Branch::Named(name) => {
-            if current_branch(cx, repo).as_deref() != Some(name.as_str()) {
-                switch(cx, repo, name)?;
+        Branch::Named(name) => switch(cx, repo, name)?,
+        Branch::ProjectDefault => {
+            // The branch checked out may predate pippwin.toml (an older
+            // clone): then start from the repository's default branch and
+            // read the file there.
+            let on = if Project::file_path(repo).is_file() {
+                None
+            } else {
+                let default = remote_default_branch(cx, repo)?;
+                switch(cx, repo, &default)?;
+                Some(default)
+            };
+            let wanted = project_file_here(repo)?.project.branch;
+            if on.as_deref() != Some(wanted.as_str()) {
+                switch(cx, repo, &wanted)?;
             }
         }
-        Branch::ProjectDefault => switch_to_project_branch(cx, repo)?,
     }
     cx.ui.done(&format!(
         "Reusing the clone in {}.",
@@ -587,6 +656,10 @@ mod tests {
             )
             .answer(&format!("git -C {} status --porcelain", repo.display()), "")
             .answer(
+                &format!("git -C {} rev-list --count", repo.display()),
+                "0\n",
+            )
+            .answer(
                 &format!("git -C {} branch --show-current", repo.display()),
                 "main\n",
             );
@@ -595,10 +668,168 @@ mod tests {
         cx.request.branch = Some("feature/ios".into());
         run_project(&mut cx).unwrap();
         let shown: Vec<String> = run.ran.iter().map(Cmd::display).collect();
-        assert_eq!(shown.len(), 2);
+        assert_eq!(shown.len(), 3);
         assert!(shown[0]
             .ends_with("fetch origin +refs/heads/feature/ios:refs/remotes/origin/feature/ios"));
         assert!(shown[1].ends_with("switch feature/ios"));
+        assert!(shown[2].ends_with("merge --ff-only origin/feature/ios"));
+    }
+
+    #[test]
+    fn a_reused_branch_ahead_of_origin_stops_instead_of_being_used() {
+        // `merge --ff-only` succeeds on a branch already ahead of origin,
+        // so commits of its own must still stop setup.
+        let home = tempfile::tempdir().unwrap();
+        let repo = make_repo(home.path(), LIMIARA);
+        let mut ui = ScriptUi::new([Answer::Text(repo.to_string_lossy().into())]);
+        let mut run = FakeRunner::default()
+            .answer(
+                &format!("git -C {} remote get-url origin", repo.display()),
+                "https://github.com/buchochelliq-labs/limiara-core\n",
+            )
+            .answer(&format!("git -C {} status --porcelain", repo.display()), "")
+            .answer(
+                &format!(
+                    "git -C {} rev-list --count origin/main..HEAD",
+                    repo.display()
+                ),
+                "1\n",
+            );
+        let mut cx = ctx(&mut ui, &mut run, home.path());
+        cx.request.project = Some(URL.into());
+        cx.request.branch = Some("main".into());
+        let err = run_project(&mut cx).unwrap_err();
+        assert!(
+            err.to_string().contains("commits that are not on origin"),
+            "{err}"
+        );
+        assert!(cx.state.projects.is_empty());
+    }
+
+    #[test]
+    fn a_reused_clone_on_the_wanted_branch_is_still_brought_up_to_date() {
+        let home = tempfile::tempdir().unwrap();
+        let repo = make_repo(home.path(), LIMIARA);
+        let mut ui = ScriptUi::new([
+            Answer::Text(repo.to_string_lossy().into()),
+            Answer::Keys("enter"),
+        ]);
+        let mut run = FakeRunner::default()
+            .answer(
+                &format!("git -C {} remote get-url origin", repo.display()),
+                "https://github.com/buchochelliq-labs/limiara-core\n",
+            )
+            .answer(&format!("git -C {} status --porcelain", repo.display()), "")
+            .answer(
+                &format!("git -C {} rev-list --count", repo.display()),
+                "0\n",
+            )
+            .answer(
+                &format!("git -C {} branch --show-current", repo.display()),
+                "main\n",
+            );
+        let mut cx = ctx(&mut ui, &mut run, home.path());
+        cx.request.project = Some(URL.into());
+        run_project(&mut cx).unwrap();
+        let shown: Vec<String> = run.ran.iter().map(Cmd::display).collect();
+        assert_eq!(
+            shown,
+            [
+                format!(
+                    "git -C {} fetch origin +refs/heads/main:refs/remotes/origin/main",
+                    repo.display()
+                ),
+                format!("git -C {} switch main", repo.display()),
+                format!("git -C {} merge --ff-only origin/main", repo.display()),
+            ]
+        );
+    }
+
+    #[test]
+    fn an_older_clone_without_pippwin_toml_moves_to_the_default_branch() {
+        // A clone made before the project had pippwin.toml, left on an old
+        // branch: pippwin asks origin for its default branch, switches to
+        // it, and reads pippwin.toml there.
+        let home = tempfile::tempdir().unwrap();
+        let repo = make_repo(home.path(), LIMIARA);
+        let toml = repo.join("pippwin.toml");
+        std::fs::remove_file(&toml).unwrap();
+        let mut ui = ScriptUi::new([
+            Answer::Text(repo.to_string_lossy().into()),
+            Answer::Keys("enter"),
+        ]);
+        let mut run = FakeRunner::default()
+            .answer(
+                &format!("git -C {} remote get-url origin", repo.display()),
+                "https://github.com/buchochelliq-labs/limiara-core.git\n",
+            )
+            .answer(&format!("git -C {} status --porcelain", repo.display()), "")
+            .answer(
+                &format!("git -C {} rev-list --count", repo.display()),
+                "0\n",
+            )
+            .answer(
+                &format!("git -C {} ls-remote --symref origin HEAD", repo.display()),
+                "ref: refs/heads/main\tHEAD\n3d4cfd7f5379dbfdcfe7fedd583b9c78929ae9b1\tHEAD\n",
+            )
+            .answer(
+                &format!("git -C {} branch --show-current", repo.display()),
+                "main\n",
+            );
+        let switched = toml.clone();
+        run.on_interactive = Some(Box::new(move |cmd: &Cmd| {
+            if cmd.display().ends_with("switch main") {
+                std::fs::write(&switched, LIMIARA).unwrap();
+            }
+        }));
+        let mut cx = ctx(&mut ui, &mut run, home.path());
+        cx.request.project = Some(URL.into());
+        run_project(&mut cx).unwrap();
+        assert_eq!(cx.state.projects[0].branch.as_deref(), Some("main"));
+        let shown: Vec<String> = run.ran.iter().map(Cmd::display).collect();
+        // main is the default branch and the branch pippwin.toml names, so
+        // one switch is enough.
+        assert_eq!(
+            shown,
+            [
+                format!(
+                    "git -C {} fetch origin +refs/heads/main:refs/remotes/origin/main",
+                    repo.display()
+                ),
+                format!("git -C {} switch main", repo.display()),
+                format!("git -C {} merge --ff-only origin/main", repo.display()),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_default_branch_origin_will_not_name_stops_with_a_clear_message() {
+        let home = tempfile::tempdir().unwrap();
+        let repo = make_repo(home.path(), LIMIARA);
+        std::fs::remove_file(repo.join("pippwin.toml")).unwrap();
+        let mut ui = ScriptUi::new([
+            Answer::Text(repo.to_string_lossy().into()),
+            Answer::Keys("enter"),
+        ]);
+        let mut run = FakeRunner::default()
+            .answer(
+                &format!("git -C {} remote get-url origin", repo.display()),
+                "https://github.com/buchochelliq-labs/limiara-core\n",
+            )
+            .answer(&format!("git -C {} status --porcelain", repo.display()), "")
+            .answer(
+                &format!("git -C {} rev-list --count", repo.display()),
+                "0\n",
+            )
+            .answer(
+                &format!("git -C {} ls-remote --symref origin HEAD", repo.display()),
+                "",
+            );
+        let mut cx = ctx(&mut ui, &mut run, home.path());
+        cx.request.project = Some(URL.into());
+        let err = run_project(&mut cx).unwrap_err().to_string();
+        assert!(err.contains("default branch"), "{err}");
+        assert!(run.ran.is_empty());
     }
 
     #[test]
