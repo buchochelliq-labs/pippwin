@@ -17,7 +17,7 @@ WSL: it is bound once (an administrator action, so Windows asks for permission) 
 you plug it in. Inside WSL, usbmuxd talks to the phone.",
     check: check_phone,
     run: run_phone,
-    when_done: None,
+    when_done: Some(offer_when_connected),
 };
 
 fn devices(cx: &mut Ctx) -> Vec<String> {
@@ -187,6 +187,21 @@ usbipd window open on Windows; closing that window, or restarting Windows, turns
         cx.run.interactive(&auto_attach_cmd(bus_id)?)?;
     }
     Ok(())
+}
+
+/// The phone step is already done: still offer automatic reconnect, so it can
+/// be turned on (again, after its window was closed) without unplugging.
+fn offer_when_connected(cx: &mut Ctx) -> Result<()> {
+    if !cx.host.wsl || !cx.run.exists("usbipd.exe") {
+        return Ok(());
+    }
+    let Ok(list) = apple_devices(cx) else {
+        return Ok(());
+    };
+    match list.iter().find(|d| d.is_attached()) {
+        Some(device) => offer_auto_attach(cx, &device.bus_id),
+        None => Ok(()),
+    }
 }
 
 /// Before building: the iPhone must be visible in WSL. When it is plugged in
@@ -434,6 +449,28 @@ BUSID  VID:PID    DEVICE                                                        
         let (mut ui, mut run) = (ScriptUi::new([Answer::Keys("down down enter")]), make());
         let stopped = with_ctx(&mut ui, &mut run, true, connect_if_needed);
         assert!(matches!(stopped, Err(Error::Cancelled)));
+    }
+
+    #[test]
+    fn auto_attach_is_offered_when_the_iphone_is_already_connected() {
+        let attached = SHARED.replace("  Shared", "  Attached");
+        let mut run = FakeRunner::default()
+            .answer("usbipd.exe list", &attached)
+            .answer("powershell.exe -NoProfile -Command", "");
+        run.programs = vec!["usbipd.exe".into()];
+        let mut ui = ScriptUi::new([Answer::Yes(true)]);
+        with_ctx(&mut ui, &mut run, true, offer_when_connected).unwrap();
+        assert_eq!(
+            ui.questions,
+            ["Reconnect automatically whenever you plug it in?"]
+        );
+        assert_eq!(run.ran.len(), 1);
+        assert!(run.ran[0].args[2].contains("'2-4','--auto-attach'"));
+
+        // Outside WSL nothing is asked or run.
+        let (mut ui, mut run) = (ScriptUi::new([]), FakeRunner::default());
+        with_ctx(&mut ui, &mut run, false, offer_when_connected).unwrap();
+        assert!(ui.questions.is_empty() && run.captured.is_empty());
     }
 
     #[test]
