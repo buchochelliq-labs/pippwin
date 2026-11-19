@@ -64,7 +64,8 @@ project's own code: only set up projects you trust, as with any build.
 
 A project's repository URL must be https with no credentials in it. A
 clone is reused only when its `origin` is that repository and it has no
-uncommitted changes. Clones under `/mnt` are refused.
+uncommitted changes, and it is only ever fast-forwarded to `origin`'s
+branch, never reset or rebased. Clones under `/mnt` are refused.
 
 ## Downloads
 
