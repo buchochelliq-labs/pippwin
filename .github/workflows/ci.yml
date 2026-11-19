@@ -1,0 +1,62 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  rust:
+    name: fmt, clippy, test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CARGO_TERM_COLOR: always
+      CARGO_INCREMENTAL: "0"
+    steps:
+      - uses: actions/checkout@v4
+      # rust-toolchain.toml pins the toolchain, with clippy and rustfmt.
+      - name: Install the pinned toolchain
+        run: rustup toolchain install
+      - name: cargo fmt --check
+        run: cargo fmt --check
+      - name: cargo clippy
+        run: cargo clippy --all-targets --locked -- -D warnings
+      - name: cargo test
+        run: cargo test --locked
+      - name: pippwin --help
+        run: cargo run --locked --quiet -- --help
+      - name: pippwin init writes a file pippwin reads
+        run: |
+          cargo build --locked --quiet
+          pippwin="$PWD/target/debug/pippwin"
+          repo="$(mktemp -d)"
+          git -C "$repo" init --quiet --initial-branch main
+          git -C "$repo" remote add origin https://github.com/example/demo
+          mkdir -p "$repo/ios/App"
+          printf 'version: 1\nbundleID: com.example.demo\n' > "$repo/ios/App/xtool.yml"
+          printf '// swift-tools-version: 6.0\n' > "$repo/ios/App/Package.swift"
+          (cd "$repo" && "$pippwin" init --app ios/App < /dev/null)
+          (cd "$repo" && "$pippwin" check)
+          # init never overwrites.
+          if (cd "$repo" && "$pippwin" init --app ios/App < /dev/null); then
+            echo "init overwrote pippwin.toml" >&2
+            exit 1
+          fi
+
+  scripts:
+    name: shellcheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: shellcheck scripts/*.sh
+        run: shellcheck scripts/*.sh
