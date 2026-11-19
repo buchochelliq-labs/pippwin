@@ -361,6 +361,7 @@ pub fn doctor(cx: &mut Ctx) -> Result<bool> {
         if step.id == "phone" && cx.host.wsl {
             rows.push(("usbipd (Windows)".into(), phone::usbipd_check(cx)));
             rows.push(("usbmuxd".into(), phone::usbmuxd_check(cx)));
+            rows.push(("Automatic reconnect".into(), phone::auto_attach_check(cx)));
         }
     }
     let mut table = rich::table::Table::new().title("pippwin doctor");

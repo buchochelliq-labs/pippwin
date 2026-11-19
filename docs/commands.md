@@ -38,6 +38,12 @@ folder (pippwin looks upwards, up to the root of the git repository), or
 `--project`, or else the one set up last. Run it at least every 7 days with
 a free Apple ID.
 
+Before building, it checks that WSL can see the iPhone. If the iPhone is
+plugged in but not connected (after a replug, say), pippwin asks
+whether to connect it now, and does what `pippwin phone` does. If no iPhone
+is on USB, it offers to look again, to continue anyway, or to stop. Nothing
+is connected without asking.
+
 ## `pippwin doctor`
 
 ```text
@@ -46,8 +52,8 @@ pippwin doctor [--fix]
 
 A table of every check: WSL, packages, the project and its app folder,
 Swift, xtool, `~/.local/bin` on `PATH`, Rust, Node.js, the SDK, the login,
-the login token's permissions, the API key file, usbipd, usbmuxd and the
-iPhone. Outside WSL the Windows-side checks are skipped. `--fix` also
+the login token's permissions, the API key file, usbipd, usbmuxd, whether
+the iPhone reconnects automatically, and the iPhone. Outside WSL the Windows-side checks are skipped. `--fix` also
 tightens the permissions of xtool's login token and of pippwin's own files
 (see [Security](security.md)).
 
@@ -63,8 +69,11 @@ Installs or updates the iOS SDK from Xcode.xip (step 9 on its own).
 ## `pippwin phone`
 
 Connects the iPhone to WSL (step 11 on its own): finds it with usbipd,
-binds it if needed, attaches it and starts usbmuxd. Run it after every
-reconnect.
+binds it if needed, attaches it and starts usbmuxd. It then offers to
+**reconnect automatically**: usbipd-win's `--auto-attach`, in a minimized
+Windows window, attaches the iPhone again whenever it is plugged in, until
+that window is closed or Windows restarts. Without it, `pippwin run` offers
+to connect a replugged iPhone, or run `pippwin phone` again.
 
 ## `pippwin init`
 

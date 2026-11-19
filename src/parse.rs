@@ -262,6 +262,31 @@ impl UsbDevice {
     }
 }
 
+/// Bus IDs from usbipd command lines (one per line) that run
+/// `attach ... --busid <id> ... --auto-attach`.
+pub fn auto_attach_bus_ids(command_lines: &str) -> Vec<String> {
+    let mut ids = Vec::new();
+    for line in command_lines.lines() {
+        let words: Vec<&str> = line
+            .split_whitespace()
+            .map(|w| w.trim_matches('"'))
+            .collect();
+        if !words.contains(&"attach") || !words.contains(&"--auto-attach") {
+            continue;
+        }
+        if let Some(id) = words
+            .windows(2)
+            .find(|w| w[0] == "--busid" || w[0] == "-b")
+            .map(|w| w[1])
+        {
+            if crate::validate::bus_id(id) && !ids.iter().any(|i: &String| i == id) {
+                ids.push(id.to_string());
+            }
+        }
+    }
+    ids
+}
+
 /// The devices `usbipd list` shows as connected. Columns are separated by
 /// two or more spaces.
 pub fn usbipd_list(output: &str) -> Vec<UsbDevice> {
@@ -537,6 +562,16 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn auto_attach_bus_ids_from_command_lines() {
+        let lines = "\"C:\\usbipd.exe\" server\n\
+usbipd attach --wsl --busid 2-4 --auto-attach\n\
+usbipd attach --wsl --busid 1-1\n\
+usbipd attach --wsl -b 3-2 --auto-attach\n\
+usbipd attach --wsl --busid 2-4 --auto-attach\n";
+        assert_eq!(auto_attach_bus_ids(lines), ["2-4", "3-2"]);
     }
 
     #[test]
