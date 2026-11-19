@@ -1,0 +1,77 @@
+# pippwin's documentation site, built from docs/ with Zensical
+# (docs/requirements.txt pins the version) and published to GitHub Pages
+# by .github/workflows/docs.yml.
+
+[project]
+site_name = "pippwin"
+site_description = "From a Windows PC to an xtool-based iOS app on your iPhone, through WSL."
+site_url = "https://buchochelliq-labs.github.io/pippwin/"
+repo_url = "https://github.com/buchochelliq-labs/pippwin"
+repo_name = "buchochelliq-labs/pippwin"
+edit_uri = "edit/main/docs/"
+copyright = "pippwin contributors · Apache-2.0"
+docs_dir = "docs"
+site_dir = "site"
+use_directory_urls = true
+nav = [
+  { "Home" = "index.md" },
+  { "Getting started" = "getting-started.md" },
+  { "Setup steps" = "setup-steps.md" },
+  { "Commands" = "commands.md" },
+  { "pippwin.toml" = "pippwin-toml.md" },
+  { "Security" = "security.md" },
+  { "Troubleshooting" = "troubleshooting.md" },
+  { "Maintaining pippwin" = "maintaining.md" },
+]
+
+[project.theme]
+language = "en"
+features = [
+  "content.action.edit",
+  "content.code.copy",
+  "navigation.footer",
+  "navigation.instant",
+  "navigation.path",
+  "navigation.sections",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme)"
+toggle.icon = "lucide/sun-moon"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to dark mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "indigo"
+accent = "indigo"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to system preference"
+
+[project.markdown_extensions]
+abbr = {}
+admonition = {}
+attr_list = {}
+def_list = {}
+footnotes = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+pymdownx.details = {}
+pymdownx.highlight.anchor_linenums = true
+pymdownx.highlight.pygments_lang_class = true
+pymdownx.inlinehilite = {}
+pymdownx.superfences = {}
+pymdownx.tabbed.alternate_style = true
+pymdownx.tasklist.custom_checkbox = true
