@@ -80,12 +80,17 @@ impl State {
         self.projects.iter().find(|p| p.root == root)
     }
 
-    /// Add or update the record for `record.root` and make it current.
+    /// Add or update the record for `record.root` and make it current. An
+    /// earlier install still counts only when the same repository and
+    /// branch are selected again: switching either means the phone holds
+    /// a different build, so the build step must run.
     pub fn remember(&mut self, record: ProjectRecord) {
         self.current = Some(record.root.clone());
         match self.projects.iter_mut().find(|p| p.root == record.root) {
             Some(existing) => {
-                let installed = existing.installed;
+                let same_selection =
+                    existing.repository == record.repository && existing.branch == record.branch;
+                let installed = same_selection && existing.installed;
                 *existing = ProjectRecord {
                     installed: installed || record.installed,
                     ..record
@@ -112,6 +117,30 @@ impl State {
 mod tests {
     use super::*;
     use std::os::unix::fs::MetadataExt;
+
+    #[test]
+    fn switching_branch_forgets_the_earlier_install() {
+        let record = |branch: &str, installed: bool| ProjectRecord {
+            name: "Demo".into(),
+            root: PathBuf::from("/home/u/demo"),
+            repository: "https://example.com/demo".into(),
+            branch: Some(branch.into()),
+            installed,
+        };
+        let mut state = State::default();
+        state.remember(record("main", true));
+        // The same selection again keeps the install.
+        state.remember(record("main", false));
+        assert!(state.record(Path::new("/home/u/demo")).unwrap().installed);
+        // Another branch must be built and installed again.
+        state.remember(record("feature", false));
+        let now = state.record(Path::new("/home/u/demo")).unwrap();
+        assert_eq!(now.branch.as_deref(), Some("feature"));
+        assert!(!now.installed);
+        // Coming back to main after that does not revive the old install.
+        state.remember(record("main", false));
+        assert!(!state.record(Path::new("/home/u/demo")).unwrap().installed);
+    }
 
     #[test]
     fn round_trip_is_0600() {
