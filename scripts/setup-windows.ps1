@@ -127,19 +127,22 @@ if (-not (Get-Command usbipd -ErrorAction SilentlyContinue)) {
 # 4. Inside Ubuntu: git, pippwin's clone, then bootstrap.sh (build,
 #    install, start).
 Write-Step "Preparing $Distro (sudo may ask for your Linux password)"
-& wsl.exe -d $Distro --cd '~' -- bash -c 'command -v git >/dev/null || { sudo apt-get update && sudo apt-get install -y git ca-certificates; }'
+& wsl.exe -d $Distro --cd '~' --exec bash -c 'command -v git >/dev/null || { sudo apt-get update && sudo apt-get install -y git ca-certificates; }'
 if ($LASTEXITCODE -ne 0) { throw 'Installing git in WSL failed.' }
 
+# --exec runs bash directly. With `--` instead, wsl.exe hands the whole
+# line to the default Linux shell first, which expands $1, $2, $d and
+# $HOME before this bash sees them, so the clone got no branch or URL.
 # No double quotes inside: Windows PowerShell mangles them on the way to
 # native programs. The values were checked to be plain above, and reach
 # bash as separate arguments ($1, $2), never as script text.
 Write-Step "Getting pippwin ($PippwinRef) inside $Distro"
-& wsl.exe -d $Distro --cd '~' -- bash -c 'set -e; d=$HOME/.local/src/pippwin; if test -e $d/.git; then git -C $d remote get-url origin | grep -qxF -e $2 -e $2.git || { echo $d is a clone of another repository >&2; exit 3; }; if git -C $d status --porcelain | grep -q .; then echo $d has local changes >&2; exit 4; fi; git -C $d fetch origin -- $1; git -C $d checkout --quiet --detach FETCH_HEAD; else mkdir -p $HOME/.local/src; git clone --branch $1 -- $2 $d; fi' _ $PippwinRef $PippwinUrl
+& wsl.exe -d $Distro --cd '~' --exec bash -c 'set -e; d=$HOME/.local/src/pippwin; if test -e $d/.git; then git -C $d remote get-url origin | grep -qxF -e $2 -e $2.git || { echo $d is a clone of another repository >&2; exit 3; }; if git -C $d status --porcelain | grep -q .; then echo $d has local changes >&2; exit 4; fi; git -C $d fetch origin -- $1; git -C $d checkout --quiet --detach FETCH_HEAD; else mkdir -p $HOME/.local/src; git clone --branch $1 -- $2 $d; fi' _ $PippwinRef $PippwinUrl
 if ($LASTEXITCODE -ne 0) { throw 'Getting pippwin in WSL failed.' }
 
 Write-Step 'Building and starting pippwin'
 $bootstrap = @('.local/src/pippwin/scripts/bootstrap.sh', '--pippwin-ref', $PippwinRef)
 if ($Project) { $bootstrap += @('--project', $Project) }
 if ($Branch) { $bootstrap += @('--branch', $Branch) }
-& wsl.exe -d $Distro --cd '~' -- bash @bootstrap
+& wsl.exe -d $Distro --cd '~' --exec bash @bootstrap
 exit $LASTEXITCODE
